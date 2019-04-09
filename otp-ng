@@ -1,5 +1,5 @@
 #!/usr/bin/env bash 
-# prints One Time Password to terminal
+# Dynamically prints One Time Password to terminal
 # and copies to clipboard with xclip if availabe
 # can't remember who I borrowed the original script from sorry
 # Using:
@@ -70,6 +70,7 @@
    echo
    echo "Configuration: $secretsFile"
    echo "               Format: account_name:secret"
+   echo "                       <num>|<title>|<hashkey>|?|?|?|<Location>|<Original title>"
    echo
    exit 1
  fi
