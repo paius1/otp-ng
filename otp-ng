@@ -1,0 +1,139 @@
+#!/usr/bin/env bash 
+# prints One Time Password to terminal
+# and copies to clipboard with xclip if availabe
+# can't remember who I borrowed the original script from sorry
+# Using:
+#	Android's Google Auth SQLite structure as pipe-delimited entries
+#	 <num>|<title>|<hashkey>|?|?|?|<Location>|<Original title>
+#	 or user saved structure
+#	  <title>:<hashkey>
+# requires oathtool and config file
+  
+# check for oathtool
+ if [ ! $(command -v oathtool) ]; then 
+   echo >&2 "oathtool not found" 
+   exit 1
+ fi
+
+# check for readable secrets file
+ # Location of accounts and secrets
+  secretsFile="${HOME}/.config/otpkeys"
+ 
+ if [ ! -r "${secretsFile}" ]; then
+   echo >&2 "Can't read ${secretsFile}"
+   read -p "Create it? (Y/n):"
+    if [ "${REPLY}" == "n" ]; then exit 1; fi
+   echo "Creating ${secretsFile}"
+   touch ${secretsFile}
+ fi
+
+# Check parameter  --avail --add --help or NULL
+
+# --avail List available accounts
+ if [ "$1" = "--avail" ]; then
+
+ # Read secretsFile into and Array
+  while read line; do accountsArray+=($line); done < "$secretsFile"
+  echo ----- Available Account Names -----
+   for entry in "${accountsArray[@]}"
+    do
+     
+     # Android's SQLite structure
+      if [[ $(echo "${entry}" | grep '|') ]]; then 
+      	 title=$(echo ${entry} | cut -d'|' -f2)
+         hashKey=$(echo ${entry} | cut -d'|' -f3)
+      fi
+     
+     # otp-ng's structure
+      if  [[ $(echo "${entry}" | grep ':') ]]; then 
+          title=$(echo ${entry} | cut -d":" -f 1)
+          hashKey=$(echo ${entry} | cut -d":" -f 2)
+      fi
+       
+     echo "$title"
+    done
+   exit 0
+   
+# --add Add account   
+ elif [ "$1" == "--add" ]; then
+   read -p "enter account name: " account
+   read -p "enter secret: " secret
+   echo -e "${account}:${secret}\n" >> $secretsFile
+   exit 0    
+
+# --help Print help   
+ elif [ -z "$1" -o "$1" = "--help" ]; then
+   echo
+   echo "Usage: $(basename $0) account"
+   echo "       $(basename $0) --avail"
+   echo "       $(basename $0) --add"
+   echo
+   echo "Configuration: $secretsFile"
+   echo "               Format: account_name:secret"
+   echo
+   exit 1
+ fi
+ 
+# if xclip exits use it  
+ command -v xclip >/dev/null 2>&1 && clipboard=xclip || clipboard=""
+
+# trap CTRL-c 
+  trap ctrl_c INT
+
+  function ctrl_c() {
+	echo -e "\e[0m"
+	clear
+	exit 255
+  }
+  
+# read 2FA secret 
+ entry=$(grep "$1" "$secretsFile")
+ # Android's SQLite structure
+  if [[ $(echo "${entry}" | grep '|') ]]; then 
+	 otpKey=$(echo ${entry} | cut -d'|' -f3)
+  fi
+ 
+ # otp-ng's structure
+  if  [[ $(echo "${entry}" | grep ':') ]]; then 
+	  otpKey=$(echo ${entry} | cut -d":" -f 2)
+  fi
+
+# Check for Entry 
+   if [ -z "$otpKey" ]; then
+     echo "$(basename $0): Bad Service Name '$1'"
+     exit 1
+   fi
+
+# print seconds and code for 2 minutes
+ echo
+ echo "Timer   OTP      press CTRL C to exit"
+
+  for timer in $(seq 1 120); do
+    time=$(oathtool -v --totp 00 | grep 'Current time'| cut -d ' ' -f 4 | cut -d: -f3)
+    code=$(oathtool  --totp -b "$otpKey")
+
+# copy to clipboard?
+  if [ $clipboard ]; then
+    echo ${code} | xclip -i 
+  fi
+  
+# blink 10 seconds  before change
+  if [ "$time" -gt 20 ] && [ "$time" -lt 30 ]; then
+    code="\e[33;5m${code}"
+  fi
+  if [ "$time" -gt 50 ] && [ "$time" -lt 59 ]; then
+    code="\e[33;5m${code}"
+  fi
+
+# set time to default settings  
+  time="\e[39;25m${time}"
+
+# Now print the results  
+  echo -ne " $time    $code\r"
+  sleep 1
+done
+# Clean up terminal
+  echo -e "\e[0m"
+  clear
+  
+exit 0
